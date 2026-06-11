@@ -94,8 +94,12 @@ def cmd_metadata(args):
         sys.exit(1)
 
     board = parse_multiple_files(args.files)
-    result = extract_metadata(board, args.output)
-    if not args.output:
+    result = extract_metadata(board)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(result)
+        print(f"Metadata saved to: {args.output}")
+    else:
         print(result)
 
 
@@ -108,10 +112,14 @@ def cmd_diff(args):
         print("Error: Both --files-a and --files-b are required.", file=sys.stderr)
         sys.exit(1)
 
-    report = diff_gerber_versions(paths_a, paths_b, label_a=args.label_a, label_b=args.label_b)
+    report = diff_gerber_versions(paths_a, paths_b,
+                                  version_a=args.label_a,
+                                  version_b=args.label_b)
 
     if args.format == "json":
         print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+    elif args.audit:
+        print(report.to_audit_text())
     else:
         print(report.to_text())
 
@@ -119,6 +127,8 @@ def cmd_diff(args):
         with open(args.output, "w", encoding="utf-8") as f:
             if args.format == "json":
                 json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
+            elif args.audit:
+                f.write(report.to_audit_text())
             else:
                 f.write(report.to_text())
         print(f"\nDiff report saved to: {args.output}")
@@ -171,6 +181,7 @@ Examples:
     p_diff.add_argument("--label-a", default="Version A", help="Label for version A")
     p_diff.add_argument("--label-b", default="Version B", help="Label for version B")
     p_diff.add_argument("-f", "--format", choices=["text", "json"], default="text", help="Output format")
+    p_diff.add_argument("--audit", action="store_true", help="Output acceptance review format")
     p_diff.add_argument("-o", "--output", help="Save report to file")
 
     args = parser.parse_args()

@@ -44,11 +44,24 @@ class DRCReport:
         return sum(1 for v in self.violations if v.severity == "warning")
 
     def to_dict(self):
+        by_rule = {}
+        for v in self.violations:
+            by_rule.setdefault(v.rule_name, []).append(v)
+
+        rule_summaries = {}
+        for rule, viols in by_rule.items():
+            types = {}
+            for v in viols:
+                tag = v.message.split("[")[-1].rstrip("]") if "[" in v.message else "unknown"
+                types[tag] = types.get(tag, 0) + 1
+            rule_summaries[rule] = {"count": len(viols), "by_type": types}
+
         return {
             "summary": {
                 "total_violations": len(self.violations),
                 "errors": self.error_count,
                 "warnings": self.warning_count,
+                "by_rule": rule_summaries,
             },
             "violations": [v.to_dict() for v in self.violations],
         }
@@ -86,9 +99,19 @@ class DRCEngine:
 
     def check_board(self, board: BoardData) -> DRCReport:
         report = DRCReport()
-        for layer in board.layers.values():
+        copper_layers = [l for l in board.layers.values()
+                         if l.layer_type in (LayerType.TOP_COPPER, LayerType.BOTTOM_COPPER, LayerType.INNER)
+                         or (l.layer_type == LayerType.UNKNOWN and l.primitives)]
+        drill_layer = None
+        for l in board.layers.values():
+            if l.layer_type == LayerType.DRILL:
+                drill_layer = l
+                break
+
+        for layer in copper_layers:
             self._check_layer(layer, report)
-        self._check_inter_layer(board, report)
+        for layer in copper_layers:
+            self._check_inter_layer_drill(layer, drill_layer, report)
         self._check_drill(board, report)
         return report
 
@@ -119,7 +142,7 @@ class DRCEngine:
                         severity="error",
                         layer_name=layer.name,
                         position=mid,
-                        message=f"Trace width {width:.3f}mm < {min_width:.3f}mm minimum",
+                        message=f"Trace width {width:.3f}mm < {min_width:.3f}mm minimum [trace-width]",
                         details=f"From ({prim.start.x:.3f},{prim.start.y:.3f}) to ({prim.end.x:.3f},{prim.end.y:.3f})",
                     ))
             elif isinstance(prim, ArcPrimitive):
@@ -132,7 +155,7 @@ class DRCEngine:
                         severity="error",
                         layer_name=layer.name,
                         position=prim.start,
-                        message=f"Arc trace width {width:.3f}mm < {min_width:.3f}mm minimum",
+                        message=f"Arc trace width {width:.3f}mm < {min_width:.3f}mm minimum [arc-width]",
                     ))
 
     def _check_clearance(self, layer: LayerData, report: DRCReport):
@@ -174,11 +197,47 @@ class DRCEngine:
                         severity="warning",
                         layer_name=layer.name,
                         position=edge_pt,
-                        message=f"Pad edge to trace edge distance {dist:.3f}mm < {min_dist:.3f}mm",
+                        message=f"Pad edge to trace edge distance {dist:.3f}mm < {min_dist:.3f}mm [pad-trace]",
                     ))
 
-    def _check_inter_layer(self, board: BoardData, report: DRCReport):
-        pass
+    def _check_inter_layer_drill(self, copper: LayerData, drill: LayerData, report: DRCReport):
+        if drill is None:
+            return
+        min_clearance = self.rules.min_clearance_mm
+
+        copper_segments = []
+        for prim in copper.primitives:
+            if not prim.polarity:
+                continue
+            if isinstance(prim, (LinePrimitive, ArcPrimitive, FlashPrimitive)):
+                copper_segments.append(prim)
+
+        for hole in drill.drill_holes:
+            hole_radius = hole.tool_diameter / 2.0
+            for seg in copper_segments:
+                seg_hw = self._get_half_width(seg)
+                if isinstance(seg, FlashPrimitive):
+                    center_dist = hole.position.distance_to(seg.position)
+                    edge_dist = center_dist - hole_radius - seg_hw
+                elif isinstance(seg, LinePrimitive):
+                    d, proj = self._point_to_segment_dist_with_point(
+                        hole.position, seg.start, seg.end)
+                    edge_dist = d - hole_radius - seg_hw
+                elif isinstance(seg, ArcPrimitive):
+                    d, proj = self._point_to_arc_dist_with_point(hole.position, seg)
+                    edge_dist = d - hole_radius - seg_hw
+                else:
+                    continue
+
+                if edge_dist < min_clearance:
+                    tag = f"drill-{self._tag(seg)}"
+                    report.violations.append(DRCViolation(
+                        rule_name="min_clearance",
+                        severity="error",
+                        layer_name=f"{copper.name} ↔ {drill.name}",
+                        position=hole.position,
+                        message=f"Drill hole edge to copper edge clearance {edge_dist:.3f}mm < {min_clearance:.3f}mm [{tag}]",
+                    ))
 
     def _check_drill(self, board: BoardData, report: DRCReport):
         for layer in board.layers.values():
@@ -191,7 +250,7 @@ class DRCEngine:
                         severity="error",
                         layer_name=layer.name,
                         position=hole.position,
-                        message=f"Drill hole ∅{hole.tool_diameter:.3f}mm < {self.rules.min_via_hole_mm:.3f}mm minimum",
+                        message=f"Drill hole ∅{hole.tool_diameter:.3f}mm < {self.rules.min_via_hole_mm:.3f}mm minimum [drill-size]",
                     ))
 
     def _tag(self, prim) -> str:
@@ -228,7 +287,9 @@ class DRCEngine:
         if isinstance(a, FlashPrimitive) and isinstance(b, FlashPrimitive):
             center_dist = a.position.distance_to(b.position)
             edge_dist = max(0.0, center_dist - hw_a - hw_b)
-            t = 0.5 if center_dist < 1e-9 else (hw_a / center_dist)
+            if center_dist < 1e-9:
+                return edge_dist, a.position
+            t = hw_a / (hw_a + hw_b) if (hw_a + hw_b) > 0 else 0.5
             edge_pt = Point(
                 a.position.x + (b.position.x - a.position.x) * t,
                 a.position.y + (b.position.y - a.position.y) * t,
@@ -236,37 +297,97 @@ class DRCEngine:
             return edge_dist, edge_pt
 
         if isinstance(a, FlashPrimitive) and isinstance(b, LinePrimitive):
-            return self._flash_to_line_edge(a, b, hw_a, hw_b)
+            return self._flash_to_line_edge_mid(a, b, hw_a, hw_b)
         if isinstance(b, FlashPrimitive) and isinstance(a, LinePrimitive):
-            return self._flash_to_line_edge(b, a, hw_b, hw_a)
+            return self._flash_to_line_edge_mid(b, a, hw_b, hw_a)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, ArcPrimitive):
             d, pt = self._point_to_arc_dist_with_point(a.position, b)
             edge_dist = max(0.0, d - hw_a - hw_b)
-            return edge_dist, pt
+            if d < 1e-9:
+                return edge_dist, a.position
+            dx = pt.x - a.position.x
+            dy = pt.y - a.position.y
+            n = math.hypot(dx, dy)
+            if n < 1e-9:
+                return edge_dist, a.position
+            edge_pt = Point(
+                a.position.x + dx / n * hw_a,
+                a.position.y + dy / n * hw_a,
+            )
+            return edge_dist, edge_pt
         if isinstance(b, FlashPrimitive) and isinstance(a, ArcPrimitive):
             d, pt = self._point_to_arc_dist_with_point(b.position, a)
             edge_dist = max(0.0, d - hw_a - hw_b)
-            return edge_dist, pt
+            if d < 1e-9:
+                return edge_dist, b.position
+            dx = pt.x - b.position.x
+            dy = pt.y - b.position.y
+            n = math.hypot(dx, dy)
+            if n < 1e-9:
+                return edge_dist, b.position
+            edge_pt = Point(
+                b.position.x + dx / n * hw_b,
+                b.position.y + dy / n * hw_b,
+            )
+            return edge_dist, edge_pt
 
         if isinstance(a, LinePrimitive) and isinstance(b, LinePrimitive):
-            d, pt = self._segment_to_segment_dist_with_point(a.start, a.end, b.start, b.end)
-            edge_dist = max(0.0, d - hw_a - hw_b)
-            return edge_dist, pt
+            return self._trace_to_trace_edge_mid(a, b, hw_a, hw_b)
 
         if isinstance(a, LinePrimitive) and isinstance(b, ArcPrimitive):
-            d, pt = self._segment_to_arc_dist_with_point(a.start, a.end, b)
+            d, pt_a, pt_b = self._segment_to_arc_closest_points(a.start, a.end, b)
             edge_dist = max(0.0, d - hw_a - hw_b)
-            return edge_dist, pt
+            if d < 1e-9:
+                edge_pt = Point((a.start.x + a.end.x) / 2, (a.start.y + a.end.y) / 2)
+            else:
+                dx = pt_b.x - pt_a.x
+                dy = pt_b.y - pt_a.y
+                n = math.hypot(dx, dy)
+                if n < 1e-9:
+                    edge_pt = pt_a
+                else:
+                    edge_a = Point(pt_a.x + dx / n * hw_a, pt_a.y + dy / n * hw_a)
+                    edge_b = Point(pt_b.x - dx / n * hw_b, pt_b.y - dy / n * hw_b)
+                    edge_pt = Point((edge_a.x + edge_b.x) / 2, (edge_a.y + edge_b.y) / 2)
+            return edge_dist, edge_pt
         if isinstance(b, LinePrimitive) and isinstance(a, ArcPrimitive):
-            d, pt = self._segment_to_arc_dist_with_point(b.start, b.end, a)
+            d, pt_a, pt_b = self._segment_to_arc_closest_points(b.start, b.end, a)
             edge_dist = max(0.0, d - hw_a - hw_b)
-            return edge_dist, pt
+            if d < 1e-9:
+                edge_pt = Point((b.start.x + b.end.x) / 2, (b.start.y + b.end.y) / 2)
+            else:
+                dx = pt_b.x - pt_a.x
+                dy = pt_b.y - pt_a.y
+                n = math.hypot(dx, dy)
+                if n < 1e-9:
+                    edge_pt = pt_a
+                else:
+                    edge_a = Point(pt_a.x + dx / n * hw_a, pt_a.y + dy / n * hw_a)
+                    edge_b = Point(pt_b.x - dx / n * hw_b, pt_b.y - dy / n * hw_b)
+                    edge_pt = Point((edge_a.x + edge_b.x) / 2, (edge_a.y + edge_b.y) / 2)
+            return edge_dist, edge_pt
 
         return None, Point(0, 0)
 
-    def _flash_to_line_edge(self, flash: FlashPrimitive, line: LinePrimitive,
-                             hw_pad: float, hw_trace: float) -> Tuple[float, Point]:
+    def _trace_to_trace_edge_mid(self, a: LinePrimitive, b: LinePrimitive,
+                                  hw_a: float, hw_b: float) -> Tuple[float, Point]:
+        d, pt_a, pt_b = self._segment_to_segment_closest_points(a.start, a.end, b.start, b.end)
+        edge_dist = max(0.0, d - hw_a - hw_b)
+        if d < 1e-9:
+            edge_pt = Point((a.start.x + a.end.x + b.start.x + b.end.x) / 4,
+                            (a.start.y + a.end.y + b.start.y + b.end.y) / 4)
+        else:
+            dx = pt_b.x - pt_a.x
+            dy = pt_b.y - pt_a.y
+            n = math.hypot(dx, dy)
+            edge_a = Point(pt_a.x + dx / n * hw_a, pt_a.y + dy / n * hw_a)
+            edge_b = Point(pt_b.x - dx / n * hw_b, pt_b.y - dy / n * hw_b)
+            edge_pt = Point((edge_a.x + edge_b.x) / 2, (edge_a.y + edge_b.y) / 2)
+        return edge_dist, edge_pt
+
+    def _flash_to_line_edge_mid(self, flash: FlashPrimitive, line: LinePrimitive,
+                                 hw_pad: float, hw_trace: float) -> Tuple[float, Point]:
         d, proj = self._point_to_segment_dist_with_point(flash.position, line.start, line.end)
         edge_dist = max(0.0, d - hw_pad - hw_trace)
         if d < 1e-9:
@@ -276,10 +397,15 @@ class DRCEngine:
         n = math.hypot(dx, dy)
         if n < 1e-9:
             return edge_dist, flash.position
-        edge_pt = Point(
+        edge_pad = Point(
             flash.position.x + dx / n * hw_pad,
             flash.position.y + dy / n * hw_pad,
         )
+        edge_trace = Point(
+            proj.x - dx / n * hw_trace,
+            proj.y - dy / n * hw_trace,
+        )
+        edge_pt = Point((edge_pad.x + edge_trace.x) / 2, (edge_pad.y + edge_trace.y) / 2)
         return edge_dist, edge_pt
 
     def _point_to_segment_dist_with_point(self, p: Point, a: Point, b: Point) -> Tuple[float, Point]:
@@ -303,18 +429,34 @@ class DRCEngine:
             nearest = Point(arc.center.x + dx * s, arc.center.y + dy * s)
         return abs(center_dist - radius), nearest
 
+    def _segment_to_segment_closest_points(self, a1: Point, a2: Point, b1: Point, b2: Point) -> Tuple[float, Point, Point]:
+        dx_a = a2.x - a1.x
+        dy_a = a2.y - a1.y
+        dx_b = b2.x - b1.x
+        dy_b = b2.y - b1.y
+
+        d_ab = Point(b1.x - a1.x, b1.y - a1.y)
+        d_aa = dx_a * dx_a + dy_a * dy_a
+        d_bb = dx_b * dx_b + dy_b * dy_b
+        d_ab_dot_a = d_ab.x * dx_a + d_ab.y * dy_a
+        d_ab_dot_b = d_ab.x * dx_b + d_ab.y * dy_b
+        d_a_cross_b = dx_a * dx_b + dy_a * dy_b
+
+        denom = d_aa * d_bb - d_a_cross_b * d_a_cross_b
+
+        if denom < 1e-12:
+            t = 0.0
+            u = max(0.0, min(1.0, -d_ab_dot_b / d_bb)) if d_bb > 0 else 0.0
+        else:
+            t = max(0.0, min(1.0, (d_ab_dot_a * d_bb - d_ab_dot_b * d_a_cross_b) / denom))
+            u = max(0.0, min(1.0, (d_ab_dot_a * d_a_cross_b - d_ab_dot_b * d_aa) / denom))
+
+        pt_a = Point(a1.x + t * dx_a, a1.y + t * dy_a)
+        pt_b = Point(b1.x + u * dx_b, b1.y + u * dy_b)
+        d = pt_a.distance_to(pt_b)
+        return d, pt_a, pt_b
+
     def _segment_to_segment_dist_with_point(self, a1: Point, a2: Point, b1: Point, b2: Point) -> Tuple[float, Point]:
-        def cross(o, a, b):
-            return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
-
-        c1 = cross(a1, a2, b1)
-        c2 = cross(a1, a2, b2)
-        c3 = cross(b1, b2, a1)
-        c4 = cross(b1, b2, a2)
-
-        if c1 * c2 < 0 and c3 * c4 < 0:
-            return 0.0, Point((a1.x + a2.x) / 2, (a1.y + a2.y) / 2)
-
         candidates = [
             self._point_to_segment_dist_with_point(a1, b1, b2),
             self._point_to_segment_dist_with_point(a2, b1, b2),
@@ -323,6 +465,20 @@ class DRCEngine:
         ]
         best = min(candidates, key=lambda x: x[0])
         return best
+
+    def _segment_to_arc_closest_points(self, a1: Point, a2: Point, arc: ArcPrimitive) -> Tuple[float, Point, Point]:
+        d, proj = self._point_to_segment_dist_with_point(arc.center, a1, a2)
+        radius = arc.center.distance_to(arc.start)
+        if d < 1e-9:
+            nearest = Point(arc.center.x + radius, arc.center.y)
+        else:
+            dx = proj.x - arc.center.x
+            dy = proj.y - arc.center.y
+            n = math.hypot(dx, dy)
+            s = radius / n
+            nearest = Point(arc.center.x + dx * s, arc.center.y + dy * s)
+        edge_dist = abs(d - radius)
+        return edge_dist, proj, nearest
 
     def _segment_to_arc_dist_with_point(self, a1: Point, a2: Point, arc: ArcPrimitive) -> Tuple[float, Point]:
         d, proj = self._point_to_segment_dist_with_point(arc.center, a1, a2)

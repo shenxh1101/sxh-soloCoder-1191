@@ -321,6 +321,8 @@ class DrillParser:
         self.drill_holes = []
         self.last_x = 0.0
         self.last_y = 0.0
+        self.last_x_is_decimal = False
+        self.last_y_is_decimal = False
 
     def _drill_coord_to_mm(self, value: float, is_decimal: bool = False) -> float:
         if is_decimal:
@@ -345,6 +347,8 @@ class DrillParser:
         in_header = True
         self.last_x = 0.0
         self.last_y = 0.0
+        self.last_x_is_decimal = False
+        self.last_y_is_decimal = False
 
         for line in lines:
             line = line.strip()
@@ -406,26 +410,24 @@ class DrillParser:
 
             has_x = False
             has_y = False
-            x_is_decimal = False
-            y_is_decimal = False
 
             x_match = re.search(r"X([\d.\-]+)", line, re.IGNORECASE)
             if x_match:
                 x_str = x_match.group(1)
-                x_is_decimal = self._has_decimal(x_str)
+                self.last_x_is_decimal = self._has_decimal(x_str)
                 self.last_x = float(x_str)
                 has_x = True
 
             y_match = re.search(r"Y([\d.\-]+)", line, re.IGNORECASE)
             if y_match:
                 y_str = y_match.group(1)
-                y_is_decimal = self._has_decimal(y_str)
+                self.last_y_is_decimal = self._has_decimal(y_str)
                 self.last_y = float(y_str)
                 has_y = True
 
             if has_x or has_y:
-                x = self._drill_coord_to_mm(self.last_x, x_is_decimal)
-                y = self._drill_coord_to_mm(self.last_y, y_is_decimal)
+                x = self._drill_coord_to_mm(self.last_x, self.last_x_is_decimal)
+                y = self._drill_coord_to_mm(self.last_y, self.last_y_is_decimal)
                 dia = self.tools.get(self.current_tool, 0.8)
                 if self.unit == "inch":
                     dia = dia * 25.4
