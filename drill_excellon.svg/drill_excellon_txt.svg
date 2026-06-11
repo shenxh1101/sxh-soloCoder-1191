@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70.8 55.9" width="800" height="600">
+<style>
+.layer-path { fill: none; stroke: #009999; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.layer-fill { fill: #33AAAA; fill-opacity: 0.3; stroke: #009999; stroke-width: 1.0; }
+.layer-pad { fill: #009999; stroke: none; }
+.layer-hole { fill: #FFFFFF; stroke: #009999; stroke-width: 1.0; }
+</style>
+<g transform="translate(20.0,20.0) scale(10.0,-10.0) translate(-0.960,-2.560)">
+<circle class="layer-hole" cx="1.000" cy="2.000" r="0.040" id="l1"/>
+<circle class="layer-hole" cx="2.000" cy="2.000" r="0.040" id="l2"/>
+<circle class="layer-hole" cx="3.000" cy="2.000" r="0.040" id="l3"/>
+<circle class="layer-hole" cx="4.000" cy="2.000" r="0.040" id="l4"/>
+<circle class="layer-hole" cx="2.500" cy="2.500" r="0.060" id="l5"/>
+<circle class="layer-hole" cx="1.000" cy="1.000" r="0.025" id="l6"/>
+<circle class="layer-hole" cx="2.000" cy="1.000" r="0.025" id="l7"/>
+<circle class="layer-hole" cx="3.000" cy="1.000" r="0.025" id="l8"/>
+<circle class="layer-hole" cx="4.000" cy="1.000" r="0.025" id="l9"/>
+</g>
+</svg>

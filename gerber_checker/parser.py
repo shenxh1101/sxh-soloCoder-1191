@@ -328,7 +328,7 @@ class DrillParser:
         return result if value >= 0 else -result
 
     def _parse_drill_lines(self, lines: List[str]):
-        tool_def_mode = False
+        in_header = True
 
         for line in lines:
             line = line.strip()
@@ -336,11 +336,14 @@ class DrillParser:
                 continue
 
             if line.upper().startswith("M48"):
+                in_header = True
                 continue
             if line.upper().startswith("M95"):
                 continue
+            if line.upper().startswith("M30"):
+                continue
             if line.upper() == "%":
-                tool_def_mode = False
+                in_header = False
                 continue
 
             if line.upper() == "METRIC":
@@ -361,17 +364,28 @@ class DrillParser:
                 continue
 
             if line.upper().startswith("T"):
-                tool_def_mode = True
-                match = re.match(r"T(\d+)\s*(?:C|([\d.]+))", line, re.IGNORECASE)
-                if match:
-                    tool_num = int(match.group(1))
-                    dia_str = match.group(2)
-                    if dia_str:
-                        self.tools[tool_num] = float(dia_str)
-                    self.current_tool = tool_num
+                if in_header:
+                    match = re.match(r"T(\d+)\s*C?([\d.]+)", line, re.IGNORECASE)
+                    if match:
+                        tool_num = int(match.group(1))
+                        dia_str = match.group(2)
+                        if dia_str:
+                            self.tools[tool_num] = float(dia_str)
+                else:
+                    match = re.match(r"T(\d+)", line, re.IGNORECASE)
+                    if match:
+                        tool_num = int(match.group(1))
+                        self.current_tool = tool_num
                 continue
 
-            if tool_def_mode:
+            if line.upper().startswith("G90"):
+                continue
+            if line.upper().startswith("G05"):
+                continue
+            if line.upper().startswith("R"):
+                continue
+
+            if in_header:
                 continue
 
             match = re.match(r"X([\d.\-]+)Y([\d.\-]+)", line, re.IGNORECASE)

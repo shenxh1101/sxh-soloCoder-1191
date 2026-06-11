@@ -110,20 +110,29 @@ class MetadataExtractor:
 
             if layer.layer_type == LayerType.DRILL:
                 drill_hole_count = len(layer.drill_holes)
+                total_vias += drill_hole_count
                 for hole in layer.drill_holes:
                     drill_diameters.append(round(hole.tool_diameter, 3))
 
         drill_diameters_unique = sorted(set(drill_diameters))
+        plated_count = sum(
+            1 for layer in self.board.layers.values()
+            if layer.layer_type == LayerType.DRILL
+            for hole in layer.drill_holes if hole.plated
+        )
+        non_plated = drill_hole_count - plated_count
 
         return {
             "total_traces": total_traces,
             "total_arcs": total_arcs,
             "total_pads": total_pads,
             "total_regions": total_regions,
-            "total_vias_estimated": total_vias,
+            "total_vias": total_vias,
             "total_trace_length_mm": round(total_trace_length, 3),
             "drill": {
-                "total_holes": drill_hole_count,
+                "total_holes": total_vias,
+                "plated_holes": plated_count,
+                "non_plated_holes": non_plated,
                 "unique_diameters_mm": drill_diameters_unique,
                 "diameters_distribution": {
                     str(d): drill_diameters.count(d) for d in drill_diameters_unique

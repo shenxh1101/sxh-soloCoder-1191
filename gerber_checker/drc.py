@@ -147,15 +147,15 @@ class DRCEngine:
 
         for i in range(len(segments)):
             for j in range(i + 1, len(segments)):
-                dist = self._min_distance_between(segments[i], segments[j])
+                dist = self._primitive_edge_distance(segments[i], segments[j])
                 if dist is not None and dist < min_clearance:
-                    pos = self._midpoint_between(segments[i], segments[j])
+                    pos = self._closest_point_between(segments[i], segments[j])
                     report.violations.append(DRCViolation(
                         rule_name="min_clearance",
                         severity="error",
                         layer_name=layer.name,
                         position=pos,
-                        message=f"Clearance {dist:.3f}mm < {min_clearance:.3f}mm minimum",
+                        message=f"Copper edge clearance {dist:.3f}mm < {min_clearance:.3f}mm minimum",
                     ))
 
     def _check_pad_to_trace(self, layer: LayerData, report: DRCReport):
@@ -167,14 +167,14 @@ class DRCEngine:
 
         for pad in pads:
             for trace in traces:
-                dist = self._min_distance_between(pad, trace)
+                dist = self._primitive_edge_distance(pad, trace)
                 if dist is not None and 0 < dist < min_dist:
                     report.violations.append(DRCViolation(
                         rule_name="min_pad_to_trace",
                         severity="warning",
                         layer_name=layer.name,
                         position=pad.position,
-                        message=f"Pad-to-trace distance {dist:.3f}mm < {min_dist:.3f}mm minimum",
+                        message=f"Pad edge to trace edge distance {dist:.3f}mm < {min_dist:.3f}mm minimum",
                     ))
 
     def _check_inter_layer(self, board: BoardData, report: DRCReport):
@@ -194,27 +194,56 @@ class DRCEngine:
                         message=f"Drill hole {hole.tool_diameter:.3f}mm < {self.rules.min_via_hole_mm:.3f}mm minimum",
                     ))
 
-    def _min_distance_between(self, a, b):
-        from .models import LinePrimitive, ArcPrimitive, FlashPrimitive
+    def _get_half_width(self, prim) -> float:
+        if isinstance(prim, FlashPrimitive):
+            if prim.aperture and prim.aperture.params:
+                if prim.aperture.shape.value == "C":
+                    return prim.aperture.params[0] / 2.0
+                elif prim.aperture.shape.value == "R":
+                    w = prim.aperture.params[0]
+                    h = prim.aperture.params[1] if len(prim.aperture.params) > 1 else w
+                    return max(w, h) / 2.0
+                else:
+                    return prim.aperture.params[0] / 2.0 if prim.aperture.params else 0.5
+            return 0.5
+        elif isinstance(prim, (LinePrimitive, ArcPrimitive)):
+            if prim.aperture and prim.aperture.params:
+                return prim.aperture.params[0] / 2.0
+            return 0.0
+        return 0.0
+
+    def _primitive_edge_distance(self, a, b):
+        hw_a = self._get_half_width(a)
+        hw_b = self._get_half_width(b)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, FlashPrimitive):
             d = a.position.distance_to(b.position)
-            r1 = (a.aperture.params[0] / 2) if a.aperture and a.aperture.params else 0.5
-            r2 = (b.aperture.params[0] / 2) if b.aperture and b.aperture.params else 0.5
-            return max(0, d - r1 - r2)
+            return max(0.0, d - hw_a - hw_b)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, LinePrimitive):
-            return self._point_to_segment_dist(a.position, b.start, b.end)
+            d = self._point_to_segment_dist(a.position, b.start, b.end)
+            return max(0.0, d - hw_a - hw_b)
         if isinstance(b, FlashPrimitive) and isinstance(a, LinePrimitive):
-            return self._point_to_segment_dist(b.position, a.start, a.end)
+            d = self._point_to_segment_dist(b.position, a.start, a.end)
+            return max(0.0, d - hw_a - hw_b)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, ArcPrimitive):
-            return self._point_to_arc_dist(a.position, b)
+            d = self._point_to_arc_dist(a.position, b)
+            return max(0.0, d - hw_a - hw_b)
         if isinstance(b, FlashPrimitive) and isinstance(a, ArcPrimitive):
-            return self._point_to_arc_dist(b.position, a)
+            d = self._point_to_arc_dist(b.position, a)
+            return max(0.0, d - hw_a - hw_b)
 
         if isinstance(a, LinePrimitive) and isinstance(b, LinePrimitive):
-            return self._segment_to_segment_dist(a.start, a.end, b.start, b.end)
+            d = self._segment_to_segment_dist(a.start, a.end, b.start, b.end)
+            return max(0.0, d - hw_a - hw_b)
+
+        if isinstance(a, LinePrimitive) and isinstance(b, ArcPrimitive):
+            d = self._segment_to_arc_dist(a.start, a.end, b)
+            return max(0.0, d - hw_a - hw_b)
+        if isinstance(b, LinePrimitive) and isinstance(a, ArcPrimitive):
+            d = self._segment_to_arc_dist(b.start, b.end, a)
+            return max(0.0, d - hw_a - hw_b)
 
         return None
 
@@ -223,7 +252,7 @@ class DRCEngine:
         dy = b.y - a.y
         if dx == 0 and dy == 0:
             return p.distance_to(a)
-        t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)))
+        t = max(0.0, min(1.0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)))
         proj = Point(a.x + t * dx, a.y + t * dy)
         return p.distance_to(proj)
 
@@ -236,7 +265,12 @@ class DRCEngine:
         def cross(o, a, b):
             return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 
-        if cross(a1, a2, b1) * cross(a1, a2, b2) < 0 and cross(b1, b2, a1) * cross(b1, b2, a2) < 0:
+        c1 = cross(a1, a2, b1)
+        c2 = cross(a1, a2, b2)
+        c3 = cross(b1, b2, a1)
+        c4 = cross(b1, b2, a2)
+
+        if c1 * c2 < 0 and c3 * c4 < 0:
             return 0.0
 
         return min(
@@ -246,25 +280,22 @@ class DRCEngine:
             self._point_to_segment_dist(b2, a1, a2),
         )
 
-    def _midpoint_between(self, a, b):
-        from .models import LinePrimitive, ArcPrimitive, FlashPrimitive
+    def _segment_to_arc_dist(self, a1: Point, a2: Point, arc: ArcPrimitive) -> float:
+        radius = arc.center.distance_to(arc.start)
+        d1 = self._point_to_segment_dist(arc.center, a1, a2)
+        return abs(d1 - radius)
 
+    def _closest_point_between(self, a, b):
         if isinstance(a, FlashPrimitive):
-            p1 = a.position
+            return a.position
+        elif isinstance(b, FlashPrimitive):
+            return b.position
         elif isinstance(a, LinePrimitive):
-            p1 = Point((a.start.x + a.end.x) / 2, (a.start.y + a.end.y) / 2)
-        elif isinstance(a, ArcPrimitive):
-            p1 = a.start
-        else:
-            p1 = Point(0, 0)
-
-        if isinstance(b, FlashPrimitive):
-            p2 = b.position
+            return Point((a.start.x + a.end.x) / 2, (a.start.y + a.end.y) / 2)
         elif isinstance(b, LinePrimitive):
-            p2 = Point((b.start.x + b.end.x) / 2, (b.start.y + b.end.y) / 2)
+            return Point((b.start.x + b.end.x) / 2, (b.start.y + b.end.y) / 2)
+        elif isinstance(a, ArcPrimitive):
+            return a.start
         elif isinstance(b, ArcPrimitive):
-            p2 = b.start
-        else:
-            p2 = Point(0, 0)
-
-        return Point((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
+            return b.start
+        return Point(0, 0)
