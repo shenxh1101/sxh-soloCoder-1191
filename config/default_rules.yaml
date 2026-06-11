@@ -1,0 +1,11 @@
+drc_rules:
+  min_trace_width_mm: 0.15
+  min_clearance_mm: 0.15
+  min_pad_to_trace_mm: 0.20
+  min_via_diameter_mm: 0.30
+  min_via_hole_mm: 0.15
+  min_annular_ring_mm: 0.10
+  max_aspect_ratio: 8.0
+  min_silkscreen_text_height_mm: 0.80
+  min_silkscreen_line_width_mm: 0.12
+  min_solder_mask_clearance_mm: 0.05

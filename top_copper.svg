@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80.0 67.0" width="800" height="600">
+<style>
+.layer-path { fill: none; stroke: #CC0000; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.layer-fill { fill: #FF6666; fill-opacity: 0.3; stroke: #CC0000; stroke-width: 1.0; }
+.layer-pad { fill: #CC0000; stroke: none; }
+.layer-hole { fill: #FFFFFF; stroke: #CC0000; stroke-width: 1.0; }
+</style>
+<rect x="0" y="0" width="80.0" height="67.0" fill="#1A0000"/>
+<g transform="translate(20.0,20.0) scale(10.0,-10.0) translate(-0.500,-3.200)">
+<line class="layer-path" x1="0.500" y1="0.500" x2="1.500" y2="0.500" id="l1"/>
+<line class="layer-path" x1="1.500" y1="0.500" x2="1.500" y2="1.500" id="l2"/>
+<line class="layer-path" x1="1.500" y1="1.500" x2="2.500" y2="1.500" id="l3"/>
+<line class="layer-path" x1="2.500" y1="1.500" x2="2.500" y2="0.500" id="l4"/>
+<line class="layer-path" x1="2.500" y1="0.500" x2="3.500" y2="0.500" id="l5"/>
+<line class="layer-path" x1="3.500" y1="0.500" x2="3.500" y2="1.500" id="l6"/>
+<line class="layer-path" x1="3.500" y1="1.500" x2="4.500" y2="1.500" id="l7"/>
+<line class="layer-path" x1="4.500" y1="1.500" x2="4.500" y2="2.500" id="l8"/>
+<line class="layer-path" x1="4.500" y1="2.500" x2="1.500" y2="2.500" id="l9"/>
+<line class="layer-path" x1="1.500" y1="2.500" x2="0.500" y2="2.500" id="l10"/>
+<line class="layer-path" x1="0.500" y1="2.500" x2="0.500" y2="0.500" id="l11"/>
+<line class="layer-path" x1="2.500" y1="2.000" x2="3.500" y2="3.000" id="l12"/>
+<line class="layer-path" x1="3.500" y1="3.000" x2="4.500" y2="2.000" id="l13"/>
+<line class="layer-path" x1="4.500" y1="2.000" x2="3.500" y2="1.000" id="l14"/>
+<line class="layer-path" x1="3.500" y1="1.000" x2="2.500" y2="2.000" id="l15"/>
+<line class="layer-path" x1="1.500" y1="3.000" x2="1.500" y2="3.200" id="l16"/>
+<line class="layer-path" x1="1.500" y1="3.200" x2="2.500" y2="3.200" id="l17"/>
+<line class="layer-path" x1="2.500" y1="3.200" x2="2.500" y2="3.000" id="l18"/>
+</g>
+</svg>

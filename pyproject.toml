@@ -1,0 +1,18 @@
+[project]
+name = "gerber-checker"
+version = "1.0.0"
+description = "PCB Gerber file viewer and Design Rule Check tool"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+gerber-check = "gerber_checker.cli:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gerber_checker*"]

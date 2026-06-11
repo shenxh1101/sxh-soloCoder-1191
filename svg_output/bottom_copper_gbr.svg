@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80.0 60.0" width="800" height="600">
+<style>
+.layer-path { fill: none; stroke: #0000CC; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.layer-fill { fill: #6666FF; fill-opacity: 0.3; stroke: #0000CC; stroke-width: 1.0; }
+.layer-pad { fill: #0000CC; stroke: none; }
+.layer-hole { fill: #FFFFFF; stroke: #0000CC; stroke-width: 1.0; }
+</style>
+<rect x="0" y="0" width="80.0" height="60.0" fill="#00001A"/>
+<g transform="translate(20.0,20.0) scale(10.0,-10.0) translate(-0.500,-2.500)">
+<line class="layer-path" x1="0.500" y1="0.500" x2="1.500" y2="0.500" id="l19"/>
+<line class="layer-path" x1="1.500" y1="0.500" x2="1.500" y2="1.500" id="l20"/>
+<line class="layer-path" x1="1.500" y1="1.500" x2="3.500" y2="1.500" id="l21"/>
+<line class="layer-path" x1="3.500" y1="1.500" x2="3.500" y2="0.500" id="l22"/>
+<line class="layer-path" x1="3.500" y1="0.500" x2="4.500" y2="0.500" id="l23"/>
+<line class="layer-path" x1="4.500" y1="0.500" x2="4.500" y2="2.500" id="l24"/>
+<line class="layer-path" x1="4.500" y1="2.500" x2="0.500" y2="2.500" id="l25"/>
+<line class="layer-path" x1="0.500" y1="2.500" x2="0.500" y2="0.500" id="l26"/>
+<line class="layer-path" x1="1.000" y1="1.500" x2="2.000" y2="1.500" id="l27"/>
+<line class="layer-path" x1="2.000" y1="1.500" x2="2.000" y2="2.500" id="l28"/>
+<line class="layer-path" x1="2.000" y1="2.500" x2="1.000" y2="2.500" id="l29"/>
+<line class="layer-path" x1="1.000" y1="2.500" x2="1.000" y2="1.500" id="l30"/>
+</g>
+</svg>

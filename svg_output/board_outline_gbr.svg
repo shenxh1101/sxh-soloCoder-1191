@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84.0 74.0" width="800" height="600">
+<style>
+.layer-path { fill: none; stroke: #00CC00; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.layer-fill { fill: none; fill-opacity: 0.3; stroke: #00CC00; stroke-width: 1.0; }
+.layer-pad { fill: #00CC00; stroke: none; }
+.layer-hole { fill: #FFFFFF; stroke: #00CC00; stroke-width: 1.0; }
+</style>
+<rect x="0" y="0" width="84.0" height="74.0" fill="#FFFFFF"/>
+<g transform="translate(20.0,20.0) scale(10.0,-10.0) translate(-0.300,-3.700)">
+<line class="layer-path" x1="0.300" y1="0.300" x2="4.700" y2="0.300" id="l31"/>
+<line class="layer-path" x1="4.700" y1="0.300" x2="4.700" y2="3.700" id="l32"/>
+<line class="layer-path" x1="4.700" y1="3.700" x2="0.300" y2="3.700" id="l33"/>
+<line class="layer-path" x1="0.300" y1="3.700" x2="0.300" y2="0.300" id="l34"/>
+</g>
+</svg>
