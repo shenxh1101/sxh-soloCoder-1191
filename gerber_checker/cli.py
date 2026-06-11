@@ -9,7 +9,7 @@ from gerber_checker.renderer import render_layer, render_board
 from gerber_checker.drc import DRCEngine
 from gerber_checker.config import load_config
 from gerber_checker.svg_export import export_layer_svg, export_board_svg
-from gerber_checker.metadata import extract_metadata
+from gerber_checker.metadata import extract_metadata, generate_cam_report
 from gerber_checker.diff import diff_gerber_versions
 
 
@@ -94,11 +94,16 @@ def cmd_metadata(args):
         sys.exit(1)
 
     board = parse_multiple_files(args.files)
-    result = extract_metadata(board)
+
+    if args.report:
+        result = generate_cam_report(board)
+    else:
+        result = extract_metadata(board)
+
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(result)
-        print(f"Metadata saved to: {args.output}")
+        print(f"Report saved to: {args.output}")
     else:
         print(result)
 
@@ -172,7 +177,8 @@ Examples:
     p_svg.add_argument("files", nargs="*", help="Gerber/drill files to export")
 
     p_meta = subparsers.add_parser("meta", help="Extract metadata as JSON")
-    p_meta.add_argument("-o", "--output", help="Save JSON metadata to file")
+    p_meta.add_argument("-o", "--output", help="Save report to file")
+    p_meta.add_argument("--report", action="store_true", help="Generate CAM audit Markdown report")
     p_meta.add_argument("files", nargs="*", help="Gerber/drill files to analyze")
 
     p_diff = subparsers.add_parser("diff", help="Compare two versions of Gerber files")

@@ -98,6 +98,8 @@ def _get_board_outline(board: BoardData) -> Optional[Dict[str, Any]]:
                 return {
                     "width_mm": round(width, 4),
                     "height_mm": round(height, 4),
+                    "origin_x_mm": round(min_x, 4),
+                    "origin_y_mm": round(min_y, 4),
                     "from_layer": layer.name,
                     "from_outline_layer": True,
                 }
@@ -109,6 +111,8 @@ def _get_board_outline(board: BoardData) -> Optional[Dict[str, Any]]:
             return {
                 "width_mm": round(width, 4),
                 "height_mm": round(height, 4),
+                "origin_x_mm": round(bbox[0], 4),
+                "origin_y_mm": round(bbox[1], 4),
                 "from_layer": "total_bounding_box",
                 "from_outline_layer": False,
             }
@@ -118,8 +122,8 @@ def _get_board_outline(board: BoardData) -> Optional[Dict[str, Any]]:
 def _hole_to_edge_distance(hole_pos: Point, outline: Dict[str, Any]) -> Optional[float]:
     if not outline:
         return None
-    ox = 0.0
-    oy = 0.0
+    ox = outline.get("origin_x_mm", 0.0)
+    oy = outline.get("origin_y_mm", 0.0)
     ow = outline["width_mm"]
     oh = outline["height_mm"]
     dist_left = hole_pos.x - ox
@@ -348,3 +352,134 @@ def extract_metadata(board: BoardData) -> str:
     result["audit_summary"] = _extract_audit_summary(board)
 
     return json.dumps(result, indent=2, ensure_ascii=False)
+
+
+def generate_cam_report(board: BoardData) -> str:
+    summary = _extract_audit_summary(board)
+
+    lines = []
+    lines.append("# PCB CAM Audit Report")
+    lines.append("")
+
+    # ── Board Outline ──
+    lines.append("## 1. Board Outline")
+    lines.append("")
+    outline = summary.get("board_outline_mm")
+    if outline:
+        lines.append(f"| Property | Value |")
+        lines.append(f"|----------|-------|")
+        lines.append(f"| Width | {outline['width_mm']} mm |")
+        lines.append(f"| Height | {outline['height_mm']} mm |")
+        lines.append(f"| Origin | ({outline.get('origin_x_mm', 0)}, {outline.get('origin_y_mm', 0)}) mm |")
+        lines.append(f"| Source | {outline['from_layer']} |")
+        lines.append(f"| From outline layer | {outline['from_outline_layer']} |")
+        lines.append("")
+    else:
+        lines.append("> No board outline layer detected.")
+        lines.append("")
+
+    # ── Copper Layers ──
+    lines.append("## 2. Copper Layers")
+    lines.append("")
+    copper_layers = summary.get("copper_layers", [])
+    if copper_layers:
+        lines.append("| Layer | Traces | Min Width | Max Width | Pads | Min Pad | Max Pad | Min Clearance |")
+        lines.append("|-------|--------|-----------|-----------|------|---------|---------|---------------|")
+        for cl in copper_layers:
+            tw = f"{cl['min_trace_width_mm']}mm" if cl.get("min_trace_width_mm") else "-"
+            mxw = f"{cl['max_trace_width_mm']}mm" if cl.get("max_trace_width_mm") else "-"
+            mp = f"{cl['min_pad_size_mm']}mm" if cl.get("min_pad_size_mm") else "-"
+            mxp = f"{cl['max_pad_size_mm']}mm" if cl.get("max_pad_size_mm") else "-"
+            mc = f"{cl['min_intra_layer_clearance_mm']}mm" if cl.get("min_intra_layer_clearance_mm") else "-"
+            lines.append(
+                f"| {cl['layer']} | {cl['trace_count']} | {tw} | {mxw} | "
+                f"{cl['pad_count']} | {mp} | {mxp} | {mc} |"
+            )
+        lines.append("")
+    else:
+        lines.append("> No copper layers detected.")
+        lines.append("")
+
+    # ── Drill ──
+    lines.append("## 3. Drill")
+    lines.append("")
+    drill = summary.get("drill")
+    if drill:
+        lines.append(f"| Property | Value |")
+        lines.append(f"|----------|-------|")
+        lines.append(f"| Total holes | {drill['total_holes']} |")
+        lines.append(f"| Diameter range | {drill['diameter_range_mm']['min']}mm – {drill['diameter_range_mm']['max']}mm |")
+        if "min_hole_to_board_edge_mm" in drill:
+            lines.append(f"| Min hole to edge | {drill['min_hole_to_board_edge_mm']}mm |")
+        if "max_hole_to_board_edge_mm" in drill:
+            lines.append(f"| Max hole to edge | {drill['max_hole_to_board_edge_mm']}mm |")
+        lines.append("")
+        lines.append(f"| Diameter (mm) | Count |")
+        lines.append(f"|---------------|-------|")
+        for dia, cnt in sorted(drill.get("diameter_distribution", {}).items()):
+            lines.append(f"| {dia} | {cnt} |")
+        lines.append("")
+    else:
+        lines.append("> No drill data detected.")
+        lines.append("")
+
+    # ── Solder Mask ──
+    lines.append("## 4. Solder Mask")
+    lines.append("")
+    mask_layers = [l for l in board.layers.values()
+                   if l.layer_type in (LayerType.TOP_SOLDER_MASK, LayerType.BOTTOM_SOLDER_MASK)]
+    if mask_layers:
+        lines.append("| Layer | Primitives | Pads | Regions |")
+        lines.append("|-------|------------|------|---------|")
+        for ml in mask_layers:
+            pads = sum(1 for p in ml.primitives if isinstance(p, FlashPrimitive))
+            regions = sum(1 for p in ml.primitives if isinstance(p, RegionPrimitive))
+            lines.append(f"| {ml.name} | {len(ml.primitives)} | {pads} | {regions} |")
+        lines.append("")
+    else:
+        lines.append("> No solder mask layers detected.")
+        lines.append("")
+
+    # ── Silkscreen ──
+    lines.append("## 5. Silkscreen")
+    lines.append("")
+    silk_layers = [l for l in board.layers.values()
+                   if l.layer_type in (LayerType.TOP_SILKSCREEN, LayerType.BOTTOM_SILKSCREEN)]
+    if silk_layers:
+        lines.append("| Layer | Primitives | Lines | Pads | Regions |")
+        lines.append("|-------|------------|-------|------|---------|")
+        for sl in silk_layers:
+            lines_cnt = sum(1 for p in sl.primitives if isinstance(p, LinePrimitive))
+            pads = sum(1 for p in sl.primitives if isinstance(p, FlashPrimitive))
+            regions = sum(1 for p in sl.primitives if isinstance(p, RegionPrimitive))
+            lines.append(f"| {sl.name} | {len(sl.primitives)} | {lines_cnt} | {pads} | {regions} |")
+        lines.append("")
+    else:
+        lines.append("> No silkscreen layers detected.")
+        lines.append("")
+
+    # ── Audit Flags ──
+    lines.append("## 6. Audit Flags")
+    lines.append("")
+    flags = summary.get("flags", {})
+    if flags.get("all_passed"):
+        lines.append("**Status: PASS** — All checks passed.")
+    else:
+        lines.append("**Status: ISSUES FOUND**")
+        lines.append("")
+        for issue in flags.get("issues", []):
+            lines.append(f"- {issue}")
+    lines.append("")
+
+    # ── Layer Manifest ──
+    lines.append("## 7. Layer Manifest")
+    lines.append("")
+    lines.append("| File | Type | Primitives | Holes |")
+    lines.append("|------|------|------------|-------|")
+    for name, layer in board.layers.items():
+        prim_count = len(layer.primitives)
+        hole_count = len(layer.drill_holes)
+        lines.append(f"| {name} | {layer.layer_type.value} | {prim_count} | {hole_count} |")
+    lines.append("")
+
+    return "\n".join(lines)

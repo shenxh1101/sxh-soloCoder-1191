@@ -367,9 +367,15 @@ class DrillParser:
                 continue
 
             if line.upper() == "METRIC":
+                if self.unit == "inch":
+                    self.last_x = self.last_x * 25.4
+                    self.last_y = self.last_y * 25.4
                 self.unit = "mm"
                 continue
             if line.upper() == "INCH":
+                if self.unit == "mm":
+                    self.last_x = self.last_x / 25.4
+                    self.last_y = self.last_y / 25.4
                 self.unit = "inch"
                 continue
 
@@ -390,7 +396,10 @@ class DrillParser:
                         tool_num = int(match.group(1))
                         dia_str = match.group(2)
                         if dia_str:
-                            self.tools[tool_num] = float(dia_str)
+                            dia_val = float(dia_str)
+                            if self.unit == "inch":
+                                dia_val = dia_val * 25.4
+                            self.tools[tool_num] = dia_val
                 else:
                     match = re.match(r"T(\d+)", line, re.IGNORECASE)
                     if match:
@@ -429,8 +438,6 @@ class DrillParser:
                 x = self._drill_coord_to_mm(self.last_x, self.last_x_is_decimal)
                 y = self._drill_coord_to_mm(self.last_y, self.last_y_is_decimal)
                 dia = self.tools.get(self.current_tool, 0.8)
-                if self.unit == "inch":
-                    dia = dia * 25.4
                 self.drill_holes.append(DrillHole(
                     position=Point(x, y),
                     tool_diameter=dia,
