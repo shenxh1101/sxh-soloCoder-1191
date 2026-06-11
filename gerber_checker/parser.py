@@ -79,7 +79,9 @@ class GerberParser:
             if not stripped:
                 continue
             buffer += stripped
-            if buffer.endswith("*"):
+            if buffer.endswith("*%") or buffer.endswith("*"):
+                if buffer.endswith("*%"):
+                    buffer = buffer[:-1]
                 result.append(buffer)
                 buffer = ""
         if buffer:
@@ -317,18 +319,32 @@ class DrillParser:
         self.tools = {}
         self.current_tool = 0
         self.drill_holes = []
+        self.last_x = 0.0
+        self.last_y = 0.0
 
-    def _drill_coord_to_decimal(self, value: float) -> float:
-        int_part, frac_part = self.format
-        total_digits = int_part + frac_part
-        s = str(int(abs(value))).zfill(total_digits)
-        if len(s) > total_digits:
-            s = s[-total_digits:]
-        result = float(s[:int_part] + "." + s[int_part:])
-        return result if value >= 0 else -result
+    def _drill_coord_to_mm(self, value: float, is_decimal: bool = False) -> float:
+        if is_decimal:
+            result = value
+        else:
+            int_part, frac_part = self.format
+            total_digits = int_part + frac_part
+            s = str(int(abs(value))).zfill(total_digits)
+            if len(s) > total_digits:
+                s = s[-total_digits:]
+            result = float(s[:int_part] + "." + s[int_part:])
+            if value < 0:
+                result = -result
+        if self.unit == "inch":
+            result = result * 25.4
+        return result
+
+    def _has_decimal(self, s: str) -> bool:
+        return "." in s
 
     def _parse_drill_lines(self, lines: List[str]):
         in_header = True
+        self.last_x = 0.0
+        self.last_y = 0.0
 
         for line in lines:
             line = line.strip()
@@ -388,32 +404,31 @@ class DrillParser:
             if in_header:
                 continue
 
-            match = re.match(r"X([\d.\-]+)Y([\d.\-]+)", line, re.IGNORECASE)
-            if match:
-                x_val = float(match.group(1))
-                y_val = float(match.group(2))
-                x = self._drill_coord_to_decimal(x_val)
-                y = self._drill_coord_to_decimal(y_val)
-                dia = self.tools.get(self.current_tool, 0.8)
-                self.drill_holes.append(DrillHole(
-                    position=Point(x, y),
-                    tool_diameter=dia,
-                    plated=True,
-                ))
-                continue
+            has_x = False
+            has_y = False
+            x_is_decimal = False
+            y_is_decimal = False
 
-            match = re.match(r"X([\d.\-]*)Y([\d.\-]*)", line, re.IGNORECASE)
-            if match:
-                x_str = match.group(1) or "0"
-                y_str = match.group(2) or "0"
-                try:
-                    x_val = float(x_str)
-                    y_val = float(y_str)
-                    x = self._drill_coord_to_decimal(x_val)
-                    y = self._drill_coord_to_decimal(y_val)
-                except ValueError:
-                    continue
+            x_match = re.search(r"X([\d.\-]+)", line, re.IGNORECASE)
+            if x_match:
+                x_str = x_match.group(1)
+                x_is_decimal = self._has_decimal(x_str)
+                self.last_x = float(x_str)
+                has_x = True
+
+            y_match = re.search(r"Y([\d.\-]+)", line, re.IGNORECASE)
+            if y_match:
+                y_str = y_match.group(1)
+                y_is_decimal = self._has_decimal(y_str)
+                self.last_y = float(y_str)
+                has_y = True
+
+            if has_x or has_y:
+                x = self._drill_coord_to_mm(self.last_x, x_is_decimal)
+                y = self._drill_coord_to_mm(self.last_y, y_is_decimal)
                 dia = self.tools.get(self.current_tool, 0.8)
+                if self.unit == "inch":
+                    dia = dia * 25.4
                 self.drill_holes.append(DrillHole(
                     position=Point(x, y),
                     tool_diameter=dia,

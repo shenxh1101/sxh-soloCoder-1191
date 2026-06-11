@@ -191,14 +191,14 @@ class BoardData:
 
 
 LAYER_NAME_PATTERNS = {
-    LayerType.TOP_COPPER: [r"(?i)(gtl|top.*copper|top.*layer|f.*cu|top\\.gbr|layer1)"],
-    LayerType.BOTTOM_COPPER: [r"(?i)(gbl|bottom.*copper|bottom.*layer|b.*cu|bot\\.gbr|layer2)"],
+    LayerType.TOP_COPPER: [r"(?i)(gtl|top.*copper|top.*layer|f.*cu|top\.gbr|layer1)"],
+    LayerType.BOTTOM_COPPER: [r"(?i)(gbl|bottom.*copper|bottom.*layer|b.*cu|bot\.gbr|bottom\.gbr|layer2)"],
     LayerType.TOP_SOLDER_MASK: [r"(?i)(gts|top.*mask|top.*solder|f.*mask)"],
     LayerType.BOTTOM_SOLDER_MASK: [r"(?i)(gbs|bottom.*mask|bottom.*solder|b.*mask)"],
     LayerType.TOP_SILKSCREEN: [r"(?i)(gto|top.*silk|top.*legend|f.*silk)"],
     LayerType.BOTTOM_SILKSCREEN: [r"(?i)(gbo|bottom.*silk|bottom.*legend|b.*silk)"],
     LayerType.BOARD_OUTLINE: [r"(?i)(gko|gml|outline|board.*outline|edge.*cuts|profile)"],
-    LayerType.DRILL: [r"(?i)(drill|.*\\.txt$|.*\\.drl$|.*\\.xln$)"],
+    LayerType.DRILL: [r"(?i)(drill|.*\.txt$|.*\.drl$|.*\.xln$)"],
 }
 
 

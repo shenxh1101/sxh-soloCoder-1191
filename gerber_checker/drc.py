@@ -147,15 +147,15 @@ class DRCEngine:
 
         for i in range(len(segments)):
             for j in range(i + 1, len(segments)):
-                dist = self._primitive_edge_distance(segments[i], segments[j])
+                dist, edge_pt = self._primitive_edge_distance_with_point(segments[i], segments[j])
                 if dist is not None and dist < min_clearance:
-                    pos = self._closest_point_between(segments[i], segments[j])
+                    tag = f"{self._tag(segments[i])}-{self._tag(segments[j])}"
                     report.violations.append(DRCViolation(
                         rule_name="min_clearance",
                         severity="error",
                         layer_name=layer.name,
-                        position=pos,
-                        message=f"Copper edge clearance {dist:.3f}mm < {min_clearance:.3f}mm minimum",
+                        position=edge_pt,
+                        message=f"Copper edge clearance {dist:.3f}mm < {min_clearance:.3f}mm [{tag}]",
                     ))
 
     def _check_pad_to_trace(self, layer: LayerData, report: DRCReport):
@@ -167,14 +167,14 @@ class DRCEngine:
 
         for pad in pads:
             for trace in traces:
-                dist = self._primitive_edge_distance(pad, trace)
+                dist, edge_pt = self._primitive_edge_distance_with_point(pad, trace)
                 if dist is not None and 0 < dist < min_dist:
                     report.violations.append(DRCViolation(
                         rule_name="min_pad_to_trace",
                         severity="warning",
                         layer_name=layer.name,
-                        position=pad.position,
-                        message=f"Pad edge to trace edge distance {dist:.3f}mm < {min_dist:.3f}mm minimum",
+                        position=edge_pt,
+                        message=f"Pad edge to trace edge distance {dist:.3f}mm < {min_dist:.3f}mm",
                     ))
 
     def _check_inter_layer(self, board: BoardData, report: DRCReport):
@@ -191,8 +191,17 @@ class DRCEngine:
                         severity="error",
                         layer_name=layer.name,
                         position=hole.position,
-                        message=f"Drill hole {hole.tool_diameter:.3f}mm < {self.rules.min_via_hole_mm:.3f}mm minimum",
+                        message=f"Drill hole ∅{hole.tool_diameter:.3f}mm < {self.rules.min_via_hole_mm:.3f}mm minimum",
                     ))
+
+    def _tag(self, prim) -> str:
+        if isinstance(prim, LinePrimitive):
+            return "trace"
+        if isinstance(prim, ArcPrimitive):
+            return "arc"
+        if isinstance(prim, FlashPrimitive):
+            return "pad"
+        return "obj"
 
     def _get_half_width(self, prim) -> float:
         if isinstance(prim, FlashPrimitive):
@@ -212,56 +221,89 @@ class DRCEngine:
             return 0.0
         return 0.0
 
-    def _primitive_edge_distance(self, a, b):
+    def _primitive_edge_distance_with_point(self, a, b) -> Tuple[Optional[float], Point]:
         hw_a = self._get_half_width(a)
         hw_b = self._get_half_width(b)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, FlashPrimitive):
-            d = a.position.distance_to(b.position)
-            return max(0.0, d - hw_a - hw_b)
+            center_dist = a.position.distance_to(b.position)
+            edge_dist = max(0.0, center_dist - hw_a - hw_b)
+            t = 0.5 if center_dist < 1e-9 else (hw_a / center_dist)
+            edge_pt = Point(
+                a.position.x + (b.position.x - a.position.x) * t,
+                a.position.y + (b.position.y - a.position.y) * t,
+            )
+            return edge_dist, edge_pt
 
         if isinstance(a, FlashPrimitive) and isinstance(b, LinePrimitive):
-            d = self._point_to_segment_dist(a.position, b.start, b.end)
-            return max(0.0, d - hw_a - hw_b)
+            return self._flash_to_line_edge(a, b, hw_a, hw_b)
         if isinstance(b, FlashPrimitive) and isinstance(a, LinePrimitive):
-            d = self._point_to_segment_dist(b.position, a.start, a.end)
-            return max(0.0, d - hw_a - hw_b)
+            return self._flash_to_line_edge(b, a, hw_b, hw_a)
 
         if isinstance(a, FlashPrimitive) and isinstance(b, ArcPrimitive):
-            d = self._point_to_arc_dist(a.position, b)
-            return max(0.0, d - hw_a - hw_b)
+            d, pt = self._point_to_arc_dist_with_point(a.position, b)
+            edge_dist = max(0.0, d - hw_a - hw_b)
+            return edge_dist, pt
         if isinstance(b, FlashPrimitive) and isinstance(a, ArcPrimitive):
-            d = self._point_to_arc_dist(b.position, a)
-            return max(0.0, d - hw_a - hw_b)
+            d, pt = self._point_to_arc_dist_with_point(b.position, a)
+            edge_dist = max(0.0, d - hw_a - hw_b)
+            return edge_dist, pt
 
         if isinstance(a, LinePrimitive) and isinstance(b, LinePrimitive):
-            d = self._segment_to_segment_dist(a.start, a.end, b.start, b.end)
-            return max(0.0, d - hw_a - hw_b)
+            d, pt = self._segment_to_segment_dist_with_point(a.start, a.end, b.start, b.end)
+            edge_dist = max(0.0, d - hw_a - hw_b)
+            return edge_dist, pt
 
         if isinstance(a, LinePrimitive) and isinstance(b, ArcPrimitive):
-            d = self._segment_to_arc_dist(a.start, a.end, b)
-            return max(0.0, d - hw_a - hw_b)
+            d, pt = self._segment_to_arc_dist_with_point(a.start, a.end, b)
+            edge_dist = max(0.0, d - hw_a - hw_b)
+            return edge_dist, pt
         if isinstance(b, LinePrimitive) and isinstance(a, ArcPrimitive):
-            d = self._segment_to_arc_dist(b.start, b.end, a)
-            return max(0.0, d - hw_a - hw_b)
+            d, pt = self._segment_to_arc_dist_with_point(b.start, b.end, a)
+            edge_dist = max(0.0, d - hw_a - hw_b)
+            return edge_dist, pt
 
-        return None
+        return None, Point(0, 0)
 
-    def _point_to_segment_dist(self, p: Point, a: Point, b: Point) -> float:
+    def _flash_to_line_edge(self, flash: FlashPrimitive, line: LinePrimitive,
+                             hw_pad: float, hw_trace: float) -> Tuple[float, Point]:
+        d, proj = self._point_to_segment_dist_with_point(flash.position, line.start, line.end)
+        edge_dist = max(0.0, d - hw_pad - hw_trace)
+        if d < 1e-9:
+            return edge_dist, flash.position
+        dx = proj.x - flash.position.x
+        dy = proj.y - flash.position.y
+        n = math.hypot(dx, dy)
+        if n < 1e-9:
+            return edge_dist, flash.position
+        edge_pt = Point(
+            flash.position.x + dx / n * hw_pad,
+            flash.position.y + dy / n * hw_pad,
+        )
+        return edge_dist, edge_pt
+
+    def _point_to_segment_dist_with_point(self, p: Point, a: Point, b: Point) -> Tuple[float, Point]:
         dx = b.x - a.x
         dy = b.y - a.y
         if dx == 0 and dy == 0:
-            return p.distance_to(a)
+            return p.distance_to(a), a
         t = max(0.0, min(1.0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)))
         proj = Point(a.x + t * dx, a.y + t * dy)
-        return p.distance_to(proj)
+        return p.distance_to(proj), proj
 
-    def _point_to_arc_dist(self, p: Point, arc: ArcPrimitive) -> float:
+    def _point_to_arc_dist_with_point(self, p: Point, arc: ArcPrimitive) -> Tuple[float, Point]:
         radius = arc.center.distance_to(arc.start)
         center_dist = p.distance_to(arc.center)
-        return abs(center_dist - radius)
+        if center_dist < 1e-9:
+            nearest = Point(arc.center.x + radius, arc.center.y)
+        else:
+            dx = p.x - arc.center.x
+            dy = p.y - arc.center.y
+            s = radius / center_dist
+            nearest = Point(arc.center.x + dx * s, arc.center.y + dy * s)
+        return abs(center_dist - radius), nearest
 
-    def _segment_to_segment_dist(self, a1: Point, a2: Point, b1: Point, b2: Point) -> float:
+    def _segment_to_segment_dist_with_point(self, a1: Point, a2: Point, b1: Point, b2: Point) -> Tuple[float, Point]:
         def cross(o, a, b):
             return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 
@@ -271,31 +313,19 @@ class DRCEngine:
         c4 = cross(b1, b2, a2)
 
         if c1 * c2 < 0 and c3 * c4 < 0:
-            return 0.0
+            return 0.0, Point((a1.x + a2.x) / 2, (a1.y + a2.y) / 2)
 
-        return min(
-            self._point_to_segment_dist(a1, b1, b2),
-            self._point_to_segment_dist(a2, b1, b2),
-            self._point_to_segment_dist(b1, a1, a2),
-            self._point_to_segment_dist(b2, a1, a2),
-        )
+        candidates = [
+            self._point_to_segment_dist_with_point(a1, b1, b2),
+            self._point_to_segment_dist_with_point(a2, b1, b2),
+            self._point_to_segment_dist_with_point(b1, a1, a2),
+            self._point_to_segment_dist_with_point(b2, a1, a2),
+        ]
+        best = min(candidates, key=lambda x: x[0])
+        return best
 
-    def _segment_to_arc_dist(self, a1: Point, a2: Point, arc: ArcPrimitive) -> float:
+    def _segment_to_arc_dist_with_point(self, a1: Point, a2: Point, arc: ArcPrimitive) -> Tuple[float, Point]:
+        d, proj = self._point_to_segment_dist_with_point(arc.center, a1, a2)
         radius = arc.center.distance_to(arc.start)
-        d1 = self._point_to_segment_dist(arc.center, a1, a2)
-        return abs(d1 - radius)
-
-    def _closest_point_between(self, a, b):
-        if isinstance(a, FlashPrimitive):
-            return a.position
-        elif isinstance(b, FlashPrimitive):
-            return b.position
-        elif isinstance(a, LinePrimitive):
-            return Point((a.start.x + a.end.x) / 2, (a.start.y + a.end.y) / 2)
-        elif isinstance(b, LinePrimitive):
-            return Point((b.start.x + b.end.x) / 2, (b.start.y + b.end.y) / 2)
-        elif isinstance(a, ArcPrimitive):
-            return a.start
-        elif isinstance(b, ArcPrimitive):
-            return b.start
-        return Point(0, 0)
+        edge_dist = abs(d - radius)
+        return edge_dist, proj
